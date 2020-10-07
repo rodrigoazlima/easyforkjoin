@@ -1,15 +1,8 @@
-define(['ojs/ojlogger'], function (Logger) {
-  function forkjoin(
-    promises,
-    then = undefined,
-    error = undefined,
-    complete = undefined
-  ) {
+define([], function () {
+  function forkjoin(promises, then = undefined, error = undefined, complete = undefined) {
     // Validate
     if (!Array.isArray(promises)) {
-      throw new Error(
-        'The argument passed on forkjoin must be an array or promise.'
-      );
+      throw new Error('The argument passed on forkjoin must be an array or promise.');
     }
     // Verify Promise
     if (!promises) return;
@@ -24,45 +17,79 @@ define(['ojs/ojlogger'], function (Logger) {
     /**
      * public
      */
-    self.subscribe; // Acronym of then()
-    self.then = (f) => {
-      self._then.push(f);
+
+    /**
+     * Handler for succeed requests;
+     *
+     * @example @see forkjoin.example.js
+     * @returns JoinedPromise
+     * @acronym subscribe, then
+     */
+    self.subscribe = self.then = (f) => {
+      self._then_handler.push(f);
       return self;
     };
 
-    self.catch; // Acronym of error()
-    self.fail; // Acronym of error()
-    self.error = (f) => {
-      self._error.push(f);
+    /**
+     * Handler for failed requests and exceptions;
+     *
+     * @example @see forkjoin.example.js
+     * @returns JoinedPromise
+     * @acronym catch, fail, error
+     */
+    self.catch = self.fail = self.error = (f) => {
+      self._error_handler.push(f);
       return self;
     };
 
-    self.success = self.complete = (f) => {
-      // Acronym of complete()
-      self._complete.push(f);
+    /**
+     * Handler for all requests and any exceptions;
+     *
+     * @example @see forkjoin.example.js
+     * @returns JoinedPromise
+     * @acronym success, complete, finally, done
+     */
+    self.success = self.finally = self.done = self.complete = (f) => {
+      self._complete_handler.push(f);
       return self;
+    };
+
+    /**
+     * Returns the progress of current requests;
+     *
+     * @returns integer
+     * @acronym progress, status
+     */
+    self.progress = self.status = () => {
+      return self._counter / self._counterMax;
     };
 
     /**
      * private
      */
-    self._promises = promises;
-    self._counter = promises.length;
-    self._responses = [];
-    self._errorResponses = [];
-    self._then = [];
-    self._error = [];
-    self._complete = [];
+    self._promises;
+    self._counter;
+    self._counterMax;
+    self._responses;
+    self._errorResponses;
+    self._then_handler = [];
+    self._error_handler = [];
+    self._complete_handler = [];
 
-    function inicialize(then, error, complete) {
+    function inicialize(promises, then, error, complete) {
+      self._promises = promises;
+      self._counter = promises.length;
+      self._counterMax = promises.length;
+      self._responses = new Array(promises.length);
+      self._errorResponses = new Array(promises.length);
       if (Array.isArray(then)) {
-        self._then.push(then);
+        self._then_handler.push(then);
       }
       if (Array.isArray(error)) {
-        self._error.push(error);
+        self._error_handler.push(error);
       }
       if (Array.isArray(complete)) {
-        self._complete.push(complete);
+        self._complete_handler.push(complete);
       }
       // Inicialize requests
       self._promises.forEach((promise, index) => {
@@ -88,38 +115,62 @@ define(['ojs/ojlogger'], function (Logger) {
       }
     }
 
-    function nextThen(req, index, origin) {
-      self._counter--;
+    function nextThen(req, index, promise) {
+      self._counter--; // TODO : change to map
       self._responses[index] = req;
       if (!self._counter) finish();
     }
 
-    function nextError(req, index, origin) {
+    function nextError(req, index, promise) {
       self._counter--;
       self._errorResponses[index] = req;
       if (!self._counter) finish();
     }
 
     function finish() {
-      const requestsData = self._responses;
-      try {
-        if (_responses) {
-          self._then.forEach((t) => {
-            t(requestsData);
-          });
+      if (self._counterMax === 1) {
+        finishHandler(self._then_handler, self._responses[0]);
+        finishHandler(self._error_handler, self._errorResponses[0]);
+        const answeredResponse = self._errorResponses[0] || self._responses[0];
+        finishHandler(self._complete_handler, answeredResponse);
+      } else {
+        finishHandlerForArray(self._responses);
+        finishHandlerForArray(self._error_handler, self._errorResponses);
+        const allResponses = [];
+        for (let i = 0; i < self._counterMax; i++) {
+          const answeredResponse =
+            self._errorResponsesErrors[i] !== undefined ? self._errorResponses[i] : self._responses[i];
+          allResponses.push(answeredResponse);
         }
-        if (_errorResponses) {
-          self._error.forEach((e) => {
-            e(self._errorResponses);
-          });
-        }
-      } catch (error) {}
-      self._complete.forEach((c) => {
-        c(requestsData);
-      });
+        finishHandlerForArray(self._complete_handler, allResponses);
+      }
     }
 
-    inicialize(then, error, complete);
+    function finishHandler(handlers, responseData) {
+      try {
+        if (responseData) {
+          handlers.forEach((t) => {
+            t(responseData);
+          });
+        }
+      } catch (exception) {
+        console.error(exception);
+      }
+    }
+
+    function finishHandlerForArray(handlers, responsesData) {
+      try {
+        if (responsesData && responsesData.find((r) => r)) {
+          handlers.forEach((t) => {
+            t(responsesData);
+          });
+        }
+      } catch (exception) {
+        console.error(exception);
+      }
+    }
+
+    inicialize(promises, then, error, complete);
   }
   return forkjoin;
 });
