@@ -1,4 +1,4 @@
-define([], function () {
+define(['ojs/ojlogger'], function (Logger) {
   function forkjoin(promises, then = undefined, error = undefined, complete = undefined) {
     // Validate
     if (!Array.isArray(promises)) {
@@ -26,6 +26,7 @@ define([], function () {
      * @acronym subscribe, then
      */
     self.subscribe = self.then = (f) => {
+      if (!_isFunction(f)) throw 'Impossible to handle a non function';
       self._then_handler.push(f);
       return self;
     };
@@ -38,6 +39,7 @@ define([], function () {
      * @acronym catch, fail, error
      */
     self.catch = self.fail = self.error = (f) => {
+      if (!_isFunction(f)) throw 'Impossible to handle a non function';
       self._error_handler.push(f);
       return self;
     };
@@ -50,6 +52,7 @@ define([], function () {
      * @acronym success, complete, finally, done
      */
     self.success = self.finally = self.done = self.complete = (f) => {
+      if (!_isFunction(f)) throw 'Impossible to handle a non function';
       self._complete_handler.push(f);
       return self;
     };
@@ -134,40 +137,46 @@ define([], function () {
         const answeredResponse = self._errorResponses[0] || self._responses[0];
         finishHandler(self._complete_handler, answeredResponse);
       } else {
-        finishHandlerForArray(self._responses);
+        finishHandlerForArray(self._then_handler, self._responses);
         finishHandlerForArray(self._error_handler, self._errorResponses);
-        const allResponses = [];
+        const allResponses = new Array(promises.length);
         for (let i = 0; i < self._counterMax; i++) {
-          const answeredResponse =
-            self._errorResponsesErrors[i] !== undefined ? self._errorResponses[i] : self._responses[i];
-          allResponses.push(answeredResponse);
+          if (self._errorResponses && self._errorResponses[i] !== undefined) {
+            allResponses[i] = self._errorResponses[i];
+          } else {
+            allResponses[i] = self._responses[i];
+          }
         }
         finishHandlerForArray(self._complete_handler, allResponses);
       }
     }
 
     function finishHandler(handlers, responseData) {
-      try {
-        if (responseData) {
-          handlers.forEach((t) => {
-            t(responseData);
-          });
-        }
-      } catch (exception) {
-        console.error(exception);
+      if (responseData) {
+        handlers.forEach((handler) => {
+          try {
+            handler(responseData);
+          } catch (exception) {
+            console.error(exception);
+          }
+        });
       }
     }
 
     function finishHandlerForArray(handlers, responsesData) {
-      try {
-        if (responsesData && responsesData.find((r) => r)) {
-          handlers.forEach((t) => {
-            t(responsesData);
-          });
-        }
-      } catch (exception) {
-        console.error(exception);
+      if (responsesData && responsesData.find((r) => r)) {
+        handlers.forEach((handler) => {
+          try {
+            handler(responsesData);
+          } catch (exception) {
+            console.error(exception);
+          }
+        });
       }
+    }
+
+    function _isFunction(functionToCheck) {
+      return functionToCheck && {}.toString.call(functionToCheck) === '[object Function]';
     }
 
     inicialize(promises, then, error, complete);
